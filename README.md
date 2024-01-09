@@ -43,13 +43,15 @@ STM32WB is configured as a GATT server and supports :
 - Push SW1 to notify
 - Push SW4 to reset
 
-For more details refer to the Application Note :  [ AN5289 - Building a Wireless application](https://www.st.com/resource/en/application_note/an5289-how-to-build-wireless-applications-with-stm32wb-mcus-stmicroelectronics.pdf)
+For more details refer to the Application Note :  [AN5289 - Building a Wireless application](https://www.st.com/resource/en/application_note/an5289-how-to-build-wireless-applications-with-stm32wb-mcus-stmicroelectronics.pdf)
 
 ## User code template : user sections
 
 In order to help user to find where common codes are entered and then to modify it, this application come with a full project files template where we added minimum user code under several user sections. In fact, the generated source code contains several sections called **User Sections** where users can add custom application code parts. These sections are not erased/modified at project regeneration from CubeMX.
 
-Here is a list of places where you can find the most useful user sections to modify to suit your own application. We also described how we achieved to enable the template application describes before.
+Here is a list of places where you can find the most useful user sections to modify to suit your own application. We also described how we achieved to enable features of the application describes before.
+
+### Service and characteristic management
 
 - In **app_conf.h** :
 
@@ -70,6 +72,86 @@ typedef enum
   CFG_LAST_TASK_ID_WITH_HCICMD,                                               /**< Shall be LAST in the list */
 } CFG_Task_Id_With_HCI_Cmd_t;
 ```
+
+### Blue LED toggled
+
+- In **custom_app.c** :
+  
+In **CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT** User Code Section :
+
+```c++
+/* Functions Definition ------------------------------------------------------*/
+void Custom_STM_App_Notification(Custom_STM_App_Notification_evt_t *pNotification)
+{
+  /* USER CODE BEGIN CUSTOM_STM_App_Notification_1 */
+
+  /* USER CODE END CUSTOM_STM_App_Notification_1 */
+  switch (pNotification->Custom_Evt_Opcode)
+  {
+    /* USER CODE BEGIN CUSTOM_STM_App_Notification_Custom_Evt_Opcode */
+
+    /* USER CODE END CUSTOM_STM_App_Notification_Custom_Evt_Opcode */
+
+    /* My_Custom_Service */
+    case CUSTOM_STM_GPIO_C_READ_EVT:
+      /* USER CODE BEGIN CUSTOM_STM_GPIO_C_READ_EVT */
+
+      /* USER CODE END CUSTOM_STM_GPIO_C_READ_EVT */
+      break;
+
+    case CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT:
+      /* USER CODE BEGIN CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT */
+        APP_DBG_MSG("\r\n\r** CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT \n");
+        APP_DBG_MSG("\r\n\r** Write Data: 0x%02X %02X \n", pNotification->DataTransfered.pPayload[0], pNotification->DataTransfered.pPayload[1]);
+        if(pNotification->DataTransfered.pPayload[1] == 0x01)
+        {
+         HAL_GPIO_WritePin(Blue_Led_GPIO_Port, Blue_Led_Pin, GPIO_PIN_SET);
+        }
+        if(pNotification->DataTransfered.pPayload[1] == 0x00)
+        {
+         HAL_GPIO_WritePin(Blue_Led_GPIO_Port, Blue_Led_Pin, GPIO_PIN_RESET);
+        }
+
+      /* USER CODE END CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT */
+```
+
+- In **custom_stm.c** :
+
+Update Custom_STM_Event_Handler() function to manage My_GPIO_Char write, in **CUSTOM_STM_Service_1_Char_1_ACI_GATT_ATTRIBUTE_MODIFIED_VSEVT_CODE** User Section:
+
+```c++
+static SVCCTL_EvtAckStatus_t Custom_STM_Event_Handler(void *Event)
+{
+  […]
+ event_pckt = (hci_event_pckt *)(((hci_uart_pckt*)Event)->data);
+
+  switch(event_pckt->evt)
+  {
+    case HCI_VENDOR_SPECIFIC_DEBUG_EVT_CODE:
+      blecore_evt = (evt_blecore_aci*)event_pckt->data;
+      switch(blecore_evt->ecode)
+      {
+        case ACI_GATT_ATTRIBUTE_MODIFIED_VSEVT_CODE:
+        […]
+            else if (attribute_modified->Attr_Handle == (CustomContext.CustomGpio_CHdle + CHARACTERISTIC_VALUE_ATTRIBUTE_OFFSET))
+          {
+            return_value = SVCCTL_EvtAckFlowEnable;
+            /* USER CODE BEGIN CUSTOM_STM_Service_1_Char_1_ACI_GATT_ATTRIBUTE_MODIFIED_VSEVT_CODE */
+
+            Notification.Custom_Evt_Opcode = CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT;
+            Notification.DataTransfered.Length=attribute_modified->Attr_Data_Length;
+            Notification.DataTransfered.pPayload=attribute_modified->Attr_Data;
+            Custom_STM_App_Notification(&Notification);
+
+            /* USER CODE END CUSTOM_STM_Service_1_Char_1_ACI_GATT_ATTRIBUTE_MODIFIED_VSEVT_CODE */
+          } /* if (attribute_modified->Attr_Handle == (CustomContext.CustomGpio_CHdle + CHARACTERISTIC_VALUE_ATTRIBUTE_OFFSET))*/
+          /* USER CODE BEGIN EVT_BLUE_GATT_ATTRIBUTE_MODIFIED_END */
+
+          /* USER CODE END EVT_BLUE_GATT_ATTRIBUTE_MODIFIED_END */
+          break;
+```
+
+### Notify by pushing SW1
 
 - In **app_entry.c** :
 
@@ -154,46 +236,7 @@ typedef struct
 /* USER CODE END PTD */
 ```
 
-In the same file, update snippets shown. The following traces code is to indicate the Smartphone requests to enable or disable notifications and write requests on My_Custom_Service service. 
-
-In **CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT** User Code Section :
-
-```c++
-/* Functions Definition ------------------------------------------------------*/
-void Custom_STM_App_Notification(Custom_STM_App_Notification_evt_t *pNotification)
-{
-  /* USER CODE BEGIN CUSTOM_STM_App_Notification_1 */
-
-  /* USER CODE END CUSTOM_STM_App_Notification_1 */
-  switch (pNotification->Custom_Evt_Opcode)
-  {
-    /* USER CODE BEGIN CUSTOM_STM_App_Notification_Custom_Evt_Opcode */
-
-    /* USER CODE END CUSTOM_STM_App_Notification_Custom_Evt_Opcode */
-
-    /* My_Custom_Service */
-    case CUSTOM_STM_GPIO_C_READ_EVT:
-      /* USER CODE BEGIN CUSTOM_STM_GPIO_C_READ_EVT */
-
-      /* USER CODE END CUSTOM_STM_GPIO_C_READ_EVT */
-      break;
-
-    case CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT:
-      /* USER CODE BEGIN CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT */
-        APP_DBG_MSG("\r\n\r** CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT \n");
-        APP_DBG_MSG("\r\n\r** Write Data: 0x%02X %02X \n", pNotification->DataTransfered.pPayload[0], pNotification->DataTransfered.pPayload[1]);
-        if(pNotification->DataTransfered.pPayload[1] == 0x01)
-        {
-        	HAL_GPIO_WritePin(Blue_Led_GPIO_Port, Blue_Led_Pin, GPIO_PIN_SET);
-        }
-        if(pNotification->DataTransfered.pPayload[1] == 0x00)
-        {
-        	HAL_GPIO_WritePin(Blue_Led_GPIO_Port, Blue_Led_Pin, GPIO_PIN_RESET);
-        }
-
-      /* USER CODE END CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT */
-```
-
+In the same file, update snippets shown. The following traces code is to indicate the Smartphone requests to enable or disable notifications.
 In **CUSTOM_STM_GPIO_C_NOTIFY_ENABLED_EVT** and **CUSTOM_STM_GPIO_C_NOTIFY_DISABLED_EVT** User Code Sections :
 
 ```c++
@@ -222,9 +265,9 @@ Add code snippets in Custom_App_Init() function to register the send notificatio
 void Custom_APP_Init(void)
 {
   /* USER CODE BEGIN CUSTOM_APP_Init */
-	  UTIL_SEQ_RegTask(1<< CFG_TASK_SW1_BUTTON_PUSHED_ID, UTIL_SEQ_RFU, Custom_Gpio_c_Send_Notification);
-	  Custom_App_Context.Gpio_c_Notification_Status = 0;
-	  Custom_App_Context.SW1_Status = 0;
+   UTIL_SEQ_RegTask(1<< CFG_TASK_SW1_BUTTON_PUSHED_ID, UTIL_SEQ_RFU, Custom_Gpio_c_Send_Notification);
+   Custom_App_Context.Gpio_c_Notification_Status = 0;
+   Custom_App_Context.SW1_Status = 0;
   /* USER CODE END CUSTOM_APP_Init */
   return;
 }
@@ -291,47 +334,8 @@ void Custom_Gpio_c_Send_Notification(void) /* Property Notification */
 }
 ```
 
-- In **custom_stm.c** :
-
-Update Custom_STM_Event_Handler() function to manage My_GPIO_Char write, in **CUSTOM_STM_Service_1_Char_1_ACI_GATT_ATTRIBUTE_MODIFIED_VSEVT_CODE** User Section:
-
-```c++
-static SVCCTL_EvtAckStatus_t Custom_STM_Event_Handler(void *Event)
-{
-  […]
- event_pckt = (hci_event_pckt *)(((hci_uart_pckt*)Event)->data);
-
-  switch(event_pckt->evt)
-  {
-    case HCI_VENDOR_SPECIFIC_DEBUG_EVT_CODE:
-      blecore_evt = (evt_blecore_aci*)event_pckt->data;
-      switch(blecore_evt->ecode)
-      {
-        case ACI_GATT_ATTRIBUTE_MODIFIED_VSEVT_CODE:
-        […]
-            else if (attribute_modified->Attr_Handle == (CustomContext.CustomGpio_CHdle + CHARACTERISTIC_VALUE_ATTRIBUTE_OFFSET))
-          {
-            return_value = SVCCTL_EvtAckFlowEnable;
-            /* USER CODE BEGIN CUSTOM_STM_Service_1_Char_1_ACI_GATT_ATTRIBUTE_MODIFIED_VSEVT_CODE */
-
-            Notification.Custom_Evt_Opcode = CUSTOM_STM_GPIO_C_WRITE_NO_RESP_EVT;
-            Notification.DataTransfered.Length=attribute_modified->Attr_Data_Length;
-            Notification.DataTransfered.pPayload=attribute_modified->Attr_Data;
-            Custom_STM_App_Notification(&Notification);
-
-            /* USER CODE END CUSTOM_STM_Service_1_Char_1_ACI_GATT_ATTRIBUTE_MODIFIED_VSEVT_CODE */
-          } /* if (attribute_modified->Attr_Handle == (CustomContext.CustomGpio_CHdle + CHARACTERISTIC_VALUE_ATTRIBUTE_OFFSET))*/
-          /* USER CODE BEGIN EVT_BLUE_GATT_ATTRIBUTE_MODIFIED_END */
-
-          /* USER CODE END EVT_BLUE_GATT_ATTRIBUTE_MODIFIED_END */
-          break;
-```
-
 ## Troubleshooting
 
 **Caution** : Issues and the pull-requests are **not supported** to submit problems or suggestions related to the software delivered in this repository. The STM32WB-BLE-Template example is being delivered as-is, and not necessarily supported by ST.
 
 **For any other question** related to the product, the hardware performance or characteristics, the tools, the environment, you can submit it to the **ST Community** on the STM32 MCUs related [page](https://community.st.com/s/topic/0TO0X000000BSqSWAW/stm32-mcus).
-
-
-[def]: https://
